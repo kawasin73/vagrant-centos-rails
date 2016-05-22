@@ -6,6 +6,9 @@
 # backwards compatibility). Please don't change it unless you know what
 # you're doing.
 Vagrant.configure(2) do |config|
+
+  GUEST_RUBY_VERSION = '2.2.2'
+
   # The most common configuration options are documented and commented below.
   # For a complete reference, please see the online documentation at
   # https://docs.vagrantup.com.
@@ -39,7 +42,7 @@ Vagrant.configure(2) do |config|
   # the path on the host to the actual folder. The second argument is
   # the path on the guest to mount the folder. And the optional third
   # argument is a set of non-required options.
-  config.vm.synced_folder "./", "/home/vagrant/data"
+  config.vm.synced_folder ".", "/home/vagrant/data"
 
   # Provider-specific configuration so you can fine-tune various
   # backing providers for Vagrant. These expose provider-specific options.
@@ -50,7 +53,7 @@ Vagrant.configure(2) do |config|
     vb.gui = false
 
     # Customize the amount of memory on the VM:
-    vb.memory = "1024"
+    vb.memory = ENV["VM_MEMORY"] || "1024"
   end
   #
   # View the documentation for the provider you are using for more
@@ -66,8 +69,73 @@ Vagrant.configure(2) do |config|
   # Enable provisioning with a shell script. Additional provisioners such as
   # Puppet, Chef, Ansible, Salt, and Docker are also available. Please see the
   # documentation for more information about their specific syntax and use.
-  # config.vm.provision "shell", inline: <<-SHELL
-  #   sudo apt-get update
-  #   sudo apt-get install -y apache2
-  # SHELL
+  config.vm.provision "shell", privileged: true, inline: <<-SHELL
+    function install {
+      echo installing $1
+      shift
+      yum -y install "$@" >/dev/null 2>&1
+    }
+    yum -y update >/dev/null 2>&1
+
+    install "development tools"  gcc-c++ glibc-headers openssl-devel readline libyaml-devel readline-devel zlib zlib-devel
+    install "Git" git
+    install "sqlite" sqlite sqlite-devel
+
+    # mysql 5.6
+    yum install -y http://dev.mysql.com/get/mysql-community-release-el6-5.noarch.rpm >/dev/null 2>&1
+    install "MySQL" mysql mysql-server mysql-devel
+
+    chkconfig --add mysqld
+    chkconfig --level 345 mysqld  on
+    service mysqld start
+
+    mysql -uroot <<SQL
+-- SET ROOT PASSWORD --
+UPDATE mysql.user SET Password=PASSWORD('password') WHERE User='root';
+-- REMOVE ANONYMOUS USERS --
+DELETE FROM mysql.user WHERE User='';
+-- REMOVE REMOTE ROOT --
+DELETE FROM mysql.user
+WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+-- REMOVE TEST DATABASE --
+DROP DATABASE IF EXISTS test;
+DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
+-- RELOAD PRIVILEGE TABLES --
+FLUSH PRIVILEGES;
+
+CREATE USER 'rails'@'localhost';
+SET PASSWORD FOR 'rails'@'localhost' = PASSWORD('password');
+CREATE DATABASE development_db  DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci;
+CREATE DATABASE test_db DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci;
+GRANT ALL PRIVILEGES ON development_db.* to 'rails'@'localhost';
+GRANT ALL PRIVILEGES ON test_db.* to 'rails'@'localhost';
+SQL
+
+    install "Nokogiri dependencies" libxml2 libxslt libxml2-devel libxslt-devel
+    install "ImageMagick" ImageMagick ImageMagick-devel
+
+    cp /etc/localtime /etc/localtime.org
+    ln -sf  /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
+    echo "ZONE=\"Asia/Tokyo\"" > /etc/sysconfig/clock
+    service crond restart
+  SHELL
+
+  config.vm.provision "shell", privileged: false, inline: <<-SHELL
+    echo installing rbenv
+
+    git clone https://github.com/sstephenson/rbenv.git ~/.rbenv
+    git clone https://github.com/sstephenson/ruby-build.git ~/.rbenv/plugins/ruby-build
+    echo 'export PATH="$HOME/.rbenv/bin:$PATH"' >> ~/.bash_profile
+    echo 'eval "$(rbenv init -)"' >> ~/.bash_profile
+    source ~/.bash_profile
+    echo 'gem: --no-ri --no-rdoc' >> ~/.gemrc
+
+    echo installing ruby#{GUEST_RUBY_VERSION}
+
+    rbenv install #{GUEST_RUBY_VERSION}
+    rbenv global #{GUEST_RUBY_VERSION}
+
+    echo installing Bundler
+    gem install bundler -N >/dev/null 2>&1
+  SHELL
 end
