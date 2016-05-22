@@ -87,7 +87,8 @@ Vagrant.configure(2) do |config|
 
     chkconfig --add mysqld
     chkconfig --level 345 mysqld  on
-    service mysqld start
+    echo "Start and Initialize MySQL"
+    service mysqld start >/dev/null 2>&1
 
     mysql -uroot <<SQL
 -- SET ROOT PASSWORD --
