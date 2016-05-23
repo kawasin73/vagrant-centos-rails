@@ -30,6 +30,7 @@ Windows でインストールするときは、公式サイトからダウンロ
 
 ```
 git clone https://github.com/kawasin73/vagrant-centos-rails
+cd vagrant-centos-rails
 vagrant up
 vagrant ssh
 ```
